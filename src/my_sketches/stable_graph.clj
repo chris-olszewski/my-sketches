@@ -5,11 +5,12 @@
 	        [clojure.pprint :refer :all]
             [quil.middleware :as m]))
 
-(def speed 4)
+(def speed 0.04)
+(def max-speed 1.20)
 (def dot-size 16)
 (def dist 48)
-(def width 1200)
-(def height 800)
+(def width 600)
+(def height 600)
 
 (def cardinals
   '([1 0]
@@ -32,6 +33,7 @@
                              [x (inc y)])))
           (gen-node [c]
             {:pos c
+             :vol [0 0]
              :ne (neighbor c)})]
     (->>
      (for [x (range w)
@@ -39,6 +41,7 @@
        [x y])
      (reduce (fn [acc k] (assoc acc k (gen-node k)))
              {}))))
+
 
 (defn scramble-graph
   "Takes a graph in format of gen-graph and mixes position"
@@ -70,14 +73,38 @@
    (reduce +)
    (Math/sqrt)))
 
+(defn in-bounds
+  [[x y]]
+  [(min (max 0 x) width)
+   (min (max 0 y) height)]
+  )
+
+(defn mv-node
+  [node]
+  (let [v (:vol node)
+        x (:pos node)]
+    (assoc node :pos (in-bounds (sum-vect v x)))))
+
+
 (defn mv-towards
   "Move pos x towards y by distance len"
   [x y len]
-  (let [distance (norm-vect (into [] (map - x y)))
-        diff-vect (into [] (map - y x))
-        scaled-diff (sc-map #(* % (/ (min len distance) (norm-vect diff-vect))) diff-vect)]
-    (sum-vect x scaled-diff)))
+  (let [diff-vect (into [] (map - y x))
+        distance (norm-vect diff-vect)
 
+        scaled-diff (sc-map #(* % (/ (min distance len) (* distance 1))) diff-vect)]
+    scaled-diff))
+
+(defn acc-node
+  [sp y node]
+  (let [new-vol (sum-vect (mv-towards (:pos node) y sp)
+                          (:vol node))
+        capped-vol (if (< max-speed (norm-vect new-vol))
+                     (:vol node)
+                     new-vol)]
+    (assoc node
+           :vol
+           capped-vol)))
 
 (defn wanted-pos
   [x v len]
@@ -89,8 +116,9 @@
 (defn update-node-pos
   "Given a map and a key it will update given node"
   [xs x]
-  (let [pos (:pos (xs x))
-        ne (:ne (xs x))
+  (let [node (xs x)
+        pos (:pos node)
+        ne (:ne node)
         avg (avg-vect (map
                        (fn [y]
                          (wanted-pos
@@ -98,7 +126,10 @@
                           (into [] (map - x y))
                           dist))
                        ne))]
-    {:pos (mv-towards pos avg speed) :ne ne}))
+    (->>
+     node
+     (acc-node speed avg)
+     (mv-node))))
 
 (defn update-state
   "Takes a state and returns a new state"
@@ -113,7 +144,7 @@
   (qc/background 0)
   ;;(qc/smooth)
   (->>
-   (gen-graph 12 12)
+   (gen-graph 8 8)
    (scramble-graph
     (- width dot-size)
     (- height dot-size))))
@@ -126,7 +157,7 @@
             (qc/no-stroke)
             (qc/ellipse x y dot-size dot-size))
           (draw-ne [{:keys [pos ne]}]
-            (qc/stroke 255)
+            (qc/stroke 25)
             (dorun (map #(qc/line pos (:pos (state %))) ne)))
           (draw-node [{:keys [pos]}]
             (draw-circ pos))]

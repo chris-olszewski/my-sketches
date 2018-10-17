@@ -1,5 +1,5 @@
 ;; Based off of github.com/quil/quil-examples/blob/master/src/quil_sketches/automata.clj
-(ns my-sketches.automata
+(ns my-sketches.circ-automata
   (:gen-class)
   (:require [quil.core :as qc]
 	    [clojure.pprint :refer :all]))
@@ -102,30 +102,67 @@
     ;; blow the stack.
     (cons new-state (lazy-seq (simulation rule-fn new-state)))))
 
-(defn draw-buffer
-  "Redraw what's on screen given a buffer of cell data at a given scale"
-    [n buffer scale]
-    ;; We use letfn here because we want both of these functions to
-    ;; have access to the variables `buffer` and `scale`. Closing over them
-    ;; here rather than defining them separately is simply a stylistic choice.
-    ;;
-    ;; We use two nested `map-index` calls to iterated over the canvas row by row,
-    ;; cell by cell, rendering each to the UI
-  (letfn [(draw-row [y row]
-            (dorun (map-indexed (fn [x col] (draw-cell x y col)) row)))
-          (draw-cell [x y col]
-            ;;(println x y col)
-            (apply qc/fill (state-color n col))
+(defn construct-map
+  "Takes a grid and constructs a map"
+  [grid]
+  (->>
+   (for [[y row] (map-indexed vector grid)
+             [x val] (map-indexed vector row)]
+         [[x y] val])
+   (reduce
+    (fn [acc [k v]] (assoc acc k v)) {})))
+
+(defn big-circles
+  "Takes a map of x,y and converts to list of circles"
+  [grid]
+  (letfn [(cartesian [xs ys]
+            (for [x xs y ys] [x y]))
+          (cons-sq [x y s]
+            (cartesian
+             (range x (+ x s))
+             (range y (+ y s))))
+          (check-circ [g x y s]
+            (apply = (map g (cons-sq x y s))))
+          (max-circ [g x y]
+            (last (take-while
+                   (fn [s] (check-circ g x y s))
+                   (rest (range)))))]
+    (loop [xs grid
+           [x y] [0 0]
+           circs '()]
+      (if (empty? xs)
+        circs
+        (let [diam (max-circ xs x y)
+              state (xs [x y])
+              coords (cons-sq x y diam)
+              n-xs (apply dissoc xs coords)]
+          (recur n-xs
+                 (first (sort (keys n-xs)))
+                 (cons [x y state diam] circs)))))))
+
+
+
+(defn draw-circs
+  "Draw a collection of circles"
+  [n buffer scale]
+  (letfn [(draw-circ [x y st d]
+            (apply qc/fill (state-color n st))
             (qc/no-stroke)
-            (qc/rect (* scale x) (* scale y) scale scale))
-            ]
-    (dorun (map-indexed draw-row buffer))))
+            (qc/ellipse-mode :corner)
+            (qc/ellipse (* scale x) (* scale y) (* scale d) (* scale d)))]
+    (qc/smooth)
+    (->> buffer
+         (construct-map)
+         (big-circles)
+         (map #(apply draw-circ %))
+         (dorun))))
+  
 
 (defn setup
   "Setup the UI"
   []
-  (qc/smooth) ;; Enable AA
-  (qc/frame-rate 24))
+  ;;(qc/smooth) ;; Enable AA
+  (qc/frame-rate 1))
 
 ;; idea pass through specific generation to skip to
 (defn run-rule [rule-num base {:keys [width height scale]}]
@@ -133,28 +170,21 @@
         height (or height 100)
         scale (or scale 5) ; Scale factor for rendering
         ;; Our initial state is a single row of random 0s and 1s
-        initial '(1);;(repeatedly height #(rand-int base))
-        sim (simulation (n-rule base rule-num) initial)
-        ;; We use partition as a sliding wintdow here. Since sim is
-        ;; an infinite lazy sequence of future rows we use the 3-arity
-        ;; version of partition here to create a 2D view of the visible range
-        ;; of results. Since this is the 3-arity version of partition, with 1
-        ;; specified as the second parameter, each time we grab the next item from
-        ;; the sim sequence we wind up with the same 2D view as before, but shifted ahead
-        ;; one row. This is how the simulation scrolls down!
-        time-slices (atom (partition height 1 sim))]
+        initial (repeatedly width #(rand-int base))
+        sim (simulation (n-rule base rule-num) initial)]
     (println "Rule " rule-num " mappings:")
     ;;(pprint (n-rule-mappings base rule-num))
     ;; Initialize the graphics
     (qc/defsketch automata
       :title (str "Rule " rule-num)
-      :setup setup
-      :draw (fn drawfn []
-              (draw-buffer base (first @time-slices) scale)
-              (swap! time-slices (fn [_] (rest @time-slices))))
+      :setup (fn drawfn []
+              (draw-circs base (take height sim) scale))
+      ;;:draw (fn drawfn []
+      ;;        (draw-circs base (take height sim) scale))
       :size [(* scale width) (* scale height)])))
+
 
 (defn -main [base rule-num & args]
   (run-rule (Integer/valueOf rule-num)
             (Integer/valueOf base)
-            {:width 800 :height 400 :scale 1}))
+            {:width 50 :height 20 :scale 24}))

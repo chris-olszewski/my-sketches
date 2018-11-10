@@ -27,3 +27,21 @@
   [a x]
    (map #(* % (/ a (norm x))) x))
 
+(defn transpose
+  [A]
+  (into [] (apply map (comp vec list) A)))
+
+(defn matrix-mult
+  [A B]
+  (defn- rc-mult
+    [row col]
+    (reduce + (map * row col)))
+  (defn- calc-row
+    [row]
+    (into []
+          (map #(rc-mult row %) (transpose B))))
+  (into []
+        (map calc-row A)))
+
+
+(distance [1] [3])

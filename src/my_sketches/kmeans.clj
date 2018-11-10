@@ -5,8 +5,8 @@
             [quil.middleware :as m]))
 
 (def interval 800)
-(def k-fixed 8)
-(def n-fixed 1200)
+(def k-fixed 5)
+(def n-fixed 2000)
 (def dot-size 9)
 
 (defn rand-data
@@ -16,6 +16,20 @@
    (repeatedly #(rand interval))
    (partition 2)
    (take n)))
+
+;; make more general i.e. be able to pass in a seed data point set
+(defn stoc-data
+  [n]
+  (defn- gen-new [xs]
+    (let [[x y] (rand-nth xs)
+          size (apply min (map (fn [[a b]] first (l/distance [a] [b]))
+                         [[0 x] [0 y] [interval x] [interval y]]))]
+      (list (+ (- x size) (rand (* 2 size)))
+            (+ (- y size) (rand (* 2 size))))))
+  (loop [xs (rand-data 50)]
+    (if (<= n (count xs))
+      xs
+      (recur (cons (gen-new xs) xs)))))
 
 (defn find-nearest
   [ks p]
@@ -39,7 +53,7 @@
   (qc/frame-rate 1)
   (group-by (partial find-nearest
                      (rand-data k-fixed))
-            (rand-data n-fixed)))
+            (stoc-data n-fixed)))
 
 (defn k-color
   [[x y]]
